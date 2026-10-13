@@ -101,12 +101,15 @@ if "sign_result" not in st.session_state:
 if "sign_result_lock" not in st.session_state:
     st.session_state.sign_result_lock = threading.Lock()
 
+# Capture these on Streamlit's script thread. WebRTC creates the processor in
+# another thread, where accessing st.session_state is not safe.
+shared_result = st.session_state.sign_result
+result_lock = st.session_state.sign_result_lock
+
 st.subheader("カメラ")
 webrtc_ctx = webrtc_streamer(
     key="sign-recognition-camera",
-    video_processor_factory=lambda: SignProcessor(
-        st.session_state.sign_result, st.session_state.sign_result_lock
-    ),
+    video_processor_factory=lambda: SignProcessor(shared_result, result_lock),
     media_stream_constraints={"video": True, "audio": False},
     rtc_configuration={
         "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
