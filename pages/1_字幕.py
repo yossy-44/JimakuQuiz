@@ -69,7 +69,7 @@ def draw_japanese_text(frame, text):
 st.title("字幕機能")
 
 font = ImageFont.truetype(
-    "C:/Windows/Fonts/meiryo.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     40
 )
 
