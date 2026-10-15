@@ -5,6 +5,7 @@ import av
 import cv2
 import mediapipe as mp
 import numpy as np
+import requests
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 from streamlit_webrtc import VideoProcessorBase, webrtc_streamer
@@ -17,6 +18,22 @@ def load_my_model():
 
 
 model = load_my_model()
+
+
+@st.cache_data(ttl=300)
+def get_ice_servers(turn_key_id, turn_api_token):
+    """Get short-lived TURN credentials when configured in Streamlit Secrets."""
+    if not turn_key_id or not turn_api_token:
+        return [{"urls": ["stun:stun.l.google.com:19302"]}], False
+
+    response = requests.post(
+        f"https://rtc.live.cloudflare.com/v1/turn/keys/{turn_key_id}/credentials/generate-ice-servers",
+        headers={"Authorization": f"Bearer {turn_api_token}"},
+        json={"ttl": 3600},
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()["iceServers"], True
 
 with open("labelencoder_all_new.pkl", "rb") as f:
     label_encoder = pickle.load(f)
@@ -107,13 +124,23 @@ shared_result = st.session_state.sign_result
 result_lock = st.session_state.sign_result_lock
 
 st.subheader("カメラ")
+turn_key_id = st.secrets.get("CLOUDFLARE_TURN_KEY_ID", "")
+turn_api_token = st.secrets.get("CLOUDFLARE_TURN_API_TOKEN", "")
+try:
+    ice_servers, turn_enabled = get_ice_servers(turn_key_id, turn_api_token)
+except requests.RequestException:
+    ice_servers = [{"urls": ["stun:stun.l.google.com:19302"]}]
+    turn_enabled = False
+    st.warning("TURNサーバーに接続できません。カメラ接続を試しますが、ネットワークによっては起動できない場合があります。")
+
+if not turn_enabled:
+    st.info("接続できない場合は、Streamlit SecretsにCloudflare TURNのキーを設定してください。")
+
 webrtc_ctx = webrtc_streamer(
     key="sign-recognition-camera",
     video_processor_factory=lambda: SignProcessor(shared_result, result_lock),
     media_stream_constraints={"video": True, "audio": False},
-    rtc_configuration={
-        "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-    },
+    rtc_configuration={"iceServers": ice_servers},
 )
 
 
