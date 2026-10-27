@@ -34,7 +34,30 @@ def get_ice_servers(turn_key_id, turn_api_token):
         timeout=10,
     )
     response.raise_for_status()
-    return response.json()["iceServers"], True
+    ice_servers = response.json()["iceServers"]
+
+    # Prefer TURN over TLS/TCP on port 443. UDP STUN/TURN can be blocked by
+    # mobile or hosted-network firewalls even when browser camera permission works.
+    for server in ice_servers:
+        urls = server.get("urls", [])
+        if isinstance(urls, str):
+            urls = [urls]
+        tls_url = next(
+            (
+                url
+                for url in urls
+                if url.startswith("turns:") and ":443?transport=tcp" in url
+            ),
+            None,
+        )
+        if tls_url:
+            turn_server = dict(server)
+            turn_server["urls"] = [tls_url]
+            return [turn_server], True
+
+    # Keep the provider's returned configuration if it does not offer the
+    # TLS/TCP endpoint expected above.
+    return ice_servers, True
 
 
 with open("labelencoder_all_new.pkl", "rb") as f:
