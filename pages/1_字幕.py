@@ -172,6 +172,7 @@ class SignProcessor(VideoProcessorBase):
         return av.VideoFrame.from_ndarray(output, format="bgr24")
 
 
+
 st.title("字幕機能")
 st.write("カメラに手を映すと、骨格と認識結果がリアルタイムで表示されます。")
 
