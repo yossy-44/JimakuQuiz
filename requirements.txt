@@ -1,5 +1,9 @@
 streamlit>=1.37.0,<2.0
 streamlit-webrtc==0.47.9
+streamlit>=1.51.0,<2.0
+streamlit-webrtc==0.78.1
+aiortc>=1.14.0
+av>=15.1.0
 tornado>=6.4,<7
 requests
 numpy==1.26.4
