@@ -1,3 +1,4 @@
+import logging
 import pickle
 import threading
 
@@ -10,6 +11,10 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 from streamlit_webrtc import VideoProcessorBase, webrtc_streamer
 from tensorflow.keras.models import load_model
+
+logging.getLogger("streamlit_webrtc").setLevel(logging.INFO)
+logging.getLogger("aiortc").setLevel(logging.INFO)
+logging.getLogger("aioice").setLevel(logging.INFO)
 
 
 @st.cache_resource
@@ -125,6 +130,7 @@ class SignProcessor(VideoProcessorBase):
         with self.result_lock:
             self.shared_result["hira"] = hira
             self.shared_result["confidence"] = confidence
+            self.shared_result["frames"] += 1
 
         pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         ImageDraw.Draw(pil_image).text(
@@ -143,6 +149,7 @@ if "current_hira" not in st.session_state:
     st.session_state.current_hira = ""
 if "sign_result" not in st.session_state:
     st.session_state.sign_result = {"hira": "", "confidence": 0.0}
+    st.session_state.sign_result = {"hira": "", "confidence": 0.0, "frames": 0}
 if "sign_result_lock" not in st.session_state:
     st.session_state.sign_result_lock = threading.Lock()
 
@@ -181,6 +188,7 @@ def show_current_recognition():
     with result_lock:
         result = dict(shared_result)
     st.session_state.current_hira = result["hira"]
+    st.caption(f"サーバー処理フレーム数：{result['frames']}")
     if result["hira"]:
         st.caption(f"現在の認識文字：{result['hira']}（{result['confidence']:.1%}）")
     elif webrtc_ctx.state.playing:
