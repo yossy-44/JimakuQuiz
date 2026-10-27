@@ -1,6 +1,7 @@
 import logging
 import pickle
 import threading
+import time
 
 import av
 import cv2
@@ -103,9 +104,20 @@ class SignProcessor(VideoProcessorBase):
         self.font = ImageFont.truetype(
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 40
         )
+        self.last_prediction_time = 0.0
+        self.last_hira = ""
+        self.last_confidence = 0.0
 
     def recv(self, frame):
         image = frame.to_ndarray(format="bgr24")
+        height, width = image.shape[:2]
+        scale = min(1.0, 640 / width, 480 / height)
+        if scale < 1.0:
+            image = cv2.resize(
+                image,
+                (int(width * scale), int(height * scale)),
+                interpolation=cv2.INTER_AREA,
+            )
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         results = self.hands.process(rgb)
         hira = ""
@@ -113,6 +125,8 @@ class SignProcessor(VideoProcessorBase):
 
         if results.multi_hand_landmarks:
             hand_landmarks = results.multi_hand_landmarks[0]
+            now = time.monotonic()
+            if now - self.last_prediction_time >= 0.25:
             prediction = model.predict(
                 extract_features(hand_landmarks), verbose=0
             ).squeeze()
@@ -120,11 +134,29 @@ class SignProcessor(VideoProcessorBase):
             romaji = label_encoder.inverse_transform([idx])[0]
             confidence = float(np.max(prediction))
             hira = romaji_to_hira.get(romaji, romaji)
+                prediction = model(
+                    extract_features(hand_landmarks), training=False
+                ).numpy().squeeze()
+                idx = int(np.argmax(prediction))
+                romaji = label_encoder.inverse_transform([idx])[0]
+                self.last_confidence = float(np.max(prediction))
+                self.last_hira = romaji_to_hira.get(romaji, romaji)
+                self.last_prediction_time = now
+
             self.mp_draw.draw_landmarks(
                 image, hand_landmarks, self.mp_hands.HAND_CONNECTIONS
             )
             overlay = f"認識中：{hira} ({confidence:.1%})"
+            hira = self.last_hira
+            confidence = self.last_confidence
+            overlay = (
+                f"認識中：{hira} ({confidence:.1%})" if hira else "認識中：…"
+            )
         else:
+            self.last_hira = ""
+            self.last_confidence = 0.0
+            hira = ""
+            confidence = 0.0
             overlay = "認識中：－"
 
         with self.result_lock:
@@ -179,6 +211,14 @@ webrtc_ctx = webrtc_streamer(
     key="sign-recognition-camera",
     video_processor_factory=lambda: SignProcessor(shared_result, result_lock),
     media_stream_constraints={"video": True, "audio": False},
+    media_stream_constraints={
+        "video": {
+            "width": {"ideal": 640},
+            "height": {"ideal": 480},
+            "frameRate": {"ideal": 12, "max": 15},
+        },
+        "audio": False,
+    },
     rtc_configuration={"iceServers": ice_servers},
 )
 
