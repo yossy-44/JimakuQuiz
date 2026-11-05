@@ -203,7 +203,6 @@ if not turn_enabled:
 webrtc_ctx = webrtc_streamer(
     key="sign-recognition-camera",
     video_processor_factory=lambda: SignProcessor(shared_result, result_lock),
-    media_stream_constraints={"video": True, "audio": False},
     media_stream_constraints={
         "video": {
             "width": {"ideal": 640},
@@ -214,7 +213,6 @@ webrtc_ctx = webrtc_streamer(
     },
     rtc_configuration={"iceServers": ice_servers},
 )
-
 
 @st.fragment(run_every="300ms")
 def show_current_recognition():
