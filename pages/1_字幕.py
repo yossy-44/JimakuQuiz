@@ -127,13 +127,6 @@ class SignProcessor(VideoProcessorBase):
             hand_landmarks = results.multi_hand_landmarks[0]
             now = time.monotonic()
             if now - self.last_prediction_time >= 0.25:
-            prediction = model.predict(
-                extract_features(hand_landmarks), verbose=0
-            ).squeeze()
-            idx = int(np.argmax(prediction))
-            romaji = label_encoder.inverse_transform([idx])[0]
-            confidence = float(np.max(prediction))
-            hira = romaji_to_hira.get(romaji, romaji)
                 prediction = model(
                     extract_features(hand_landmarks), training=False
                 ).numpy().squeeze()
