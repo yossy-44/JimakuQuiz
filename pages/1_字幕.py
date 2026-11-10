@@ -97,6 +97,7 @@ class SignProcessor(VideoProcessorBase):
         self.hands = mp.solutions.hands.Hands(
             static_image_mode=False,
             max_num_hands=1,
+            model_complexity=0,
             min_detection_confidence=0.5,
         )
         self.mp_draw = mp.solutions.drawing_utils
@@ -120,8 +121,6 @@ class SignProcessor(VideoProcessorBase):
             )
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         results = self.hands.process(rgb)
-        hira = ""
-        confidence = 0.0
 
         if results.multi_hand_landmarks:
             hand_landmarks = results.multi_hand_landmarks[0]
@@ -139,7 +138,6 @@ class SignProcessor(VideoProcessorBase):
             self.mp_draw.draw_landmarks(
                 image, hand_landmarks, self.mp_hands.HAND_CONNECTIONS
             )
-            overlay = f"認識中：{hira} ({confidence:.1%})"
             hira = self.last_hira
             confidence = self.last_confidence
             overlay = (
@@ -173,7 +171,6 @@ if "subtitle_text" not in st.session_state:
 if "current_hira" not in st.session_state:
     st.session_state.current_hira = ""
 if "sign_result" not in st.session_state:
-    st.session_state.sign_result = {"hira": "", "confidence": 0.0}
     st.session_state.sign_result = {"hira": "", "confidence": 0.0, "frames": 0}
 if "sign_result_lock" not in st.session_state:
     st.session_state.sign_result_lock = threading.Lock()
