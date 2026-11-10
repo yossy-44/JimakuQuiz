@@ -103,11 +103,13 @@ class SignProcessor(VideoProcessorBase):
         self.mp_draw = mp.solutions.drawing_utils
         self.mp_hands = mp.solutions.hands
         self.font = ImageFont.truetype(
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 40
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 26
         )
         self.last_prediction_time = 0.0
         self.last_hira = ""
         self.last_confidence = 0.0
+        self.frame_index = 0
+        self.last_hand_landmarks = None
 
     def recv(self, frame):
         image = frame.to_ndarray(format="bgr24")
@@ -119,11 +121,20 @@ class SignProcessor(VideoProcessorBase):
                 (int(width * scale), int(height * scale)),
                 interpolation=cv2.INTER_AREA,
             )
-        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        results = self.hands.process(rgb)
+        # Run the expensive MediaPipe detector on every other incoming frame.
+        # Reuse the most recent landmarks on the in-between frame.
+        self.frame_index += 1
+        if self.frame_index % 2 == 1:
+            rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = self.hands.process(rgb)
+            self.last_hand_landmarks = (
+                results.multi_hand_landmarks[0]
+                if results.multi_hand_landmarks
+                else None
+            )
 
-        if results.multi_hand_landmarks:
-            hand_landmarks = results.multi_hand_landmarks[0]
+        hand_landmarks = self.last_hand_landmarks
+        if hand_landmarks is not None:
             now = time.monotonic()
             if now - self.last_prediction_time >= 0.25:
                 prediction = model(
@@ -197,6 +208,25 @@ except requests.RequestException:
 if not turn_enabled:
     st.info("接続できない場合は、Cloudflare TURNキーをStreamlit Secretsに設定してください。")
 
+st.subheader("字幕")
+st.text(st.session_state.subtitle_text or "（字幕はまだありません）")
+
+button_row1_col1, button_row1_col2 = st.columns(2)
+with button_row1_col1:
+    if st.button("文字確定", use_container_width=True) and st.session_state.current_hira:
+        st.session_state.subtitle_text += st.session_state.current_hira
+with button_row1_col2:
+    if st.button("1文字削除", use_container_width=True):
+        st.session_state.subtitle_text = st.session_state.subtitle_text[:-1]
+
+button_row2_col1, button_row2_col2 = st.columns(2)
+with button_row2_col1:
+    if st.button("字幕クリア", use_container_width=True):
+        st.session_state.subtitle_text = ""
+with button_row2_col2:
+    if st.button("改行", use_container_width=True):
+        st.session_state.subtitle_text += "\n"
+
 webrtc_ctx = webrtc_streamer(
     key="sign-recognition-camera",
     video_processor_factory=lambda: SignProcessor(shared_result, result_lock),
@@ -227,20 +257,3 @@ def show_current_recognition():
 
 
 show_current_recognition()
-
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    if st.button("文字確定") and st.session_state.current_hira:
-        st.session_state.subtitle_text += st.session_state.current_hira
-with col2:
-    if st.button("1文字削除"):
-        st.session_state.subtitle_text = st.session_state.subtitle_text[:-1]
-with col3:
-    if st.button("字幕クリア"):
-        st.session_state.subtitle_text = ""
-with col4:
-    if st.button("改行"):
-        st.session_state.subtitle_text += "\n"
-
-st.subheader("字幕")
-st.text(st.session_state.subtitle_text)
