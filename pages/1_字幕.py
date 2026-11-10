@@ -111,7 +111,7 @@ class SignProcessor(VideoProcessorBase):
     def recv(self, frame):
         image = frame.to_ndarray(format="bgr24")
         height, width = image.shape[:2]
-        scale = min(1.0, 640 / width, 480 / height)
+        scale = min(1.0, 320 / width, 240 / height)
         if scale < 1.0:
             image = cv2.resize(
                 image,
@@ -205,14 +205,15 @@ webrtc_ctx = webrtc_streamer(
     video_processor_factory=lambda: SignProcessor(shared_result, result_lock),
     media_stream_constraints={
         "video": {
-            "width": {"ideal": 640},
-            "height": {"ideal": 480},
-            "frameRate": {"ideal": 12, "max": 15},
+            "width": {"ideal": 320},
+            "height": {"ideal": 240},
+            "frameRate": {"ideal": 8, "max": 10},
         },
         "audio": False,
     },
     rtc_configuration={"iceServers": ice_servers},
 )
+
 
 @st.fragment(run_every="300ms")
 def show_current_recognition():
