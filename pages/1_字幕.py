@@ -42,24 +42,38 @@ def get_ice_servers(turn_key_id, turn_api_token):
     response.raise_for_status()
     ice_servers = response.json()["iceServers"]
 
-    # Prefer TURN over TLS/TCP on port 443. UDP STUN/TURN can be blocked by
-    # mobile or hosted-network firewalls even when browser camera permission works.
+    # Keep both TURN over UDP/443 and TURN over TLS/TCP/443. UDP usually has
+    # lower latency for live video; TLS/TCP remains available as a fallback on
+    # restrictive mobile or hosted networks.
     for server in ice_servers:
         urls = server.get("urls", [])
         if isinstance(urls, str):
             urls = [urls]
-        tls_url = next(
-            (
-                url
-                for url in urls
-                if url.startswith("turns:") and ":443?transport=tcp" in url
-            ),
-            None,
-        )
-        if tls_url:
-            turn_server = dict(server)
-            turn_server["urls"] = [tls_url]
-            return [turn_server], True
+        selected_urls = [
+            url
+            for url in urls
+            if url.startswith("stun:")
+            or (url.startswith("turn:") and ":443?transport=udp" in url)
+            or (url.startswith("turns:") and ":443?transport=tcp" in url)
+        ]
+        if selected_urls:
+            selected_server = dict(server)
+            selected_server["urls"] = selected_urls
+            if any(url.startswith(("turn:", "turns:")) for url in selected_urls):
+                # Keep any STUN entry and the authenticated TURN relay entry.
+                selected_servers = [
+                    {"urls": [url]} for url in selected_urls if url.startswith("stun:")
+                ]
+                selected_servers.append(
+                    {
+                        **{k: v for k, v in selected_server.items() if k != "urls"},
+                        "urls": [
+                            url for url in selected_urls
+                            if url.startswith(("turn:", "turns:"))
+                        ],
+                    }
+                )
+                return selected_servers, True
 
     # Keep the provider's returned configuration if it does not offer the
     # TLS/TCP endpoint expected above.
