@@ -122,10 +122,10 @@ class SignProcessor(VideoProcessorBase):
                 (int(width * scale), int(height * scale)),
                 interpolation=cv2.INTER_AREA,
             )
-        # Run the expensive MediaPipe detector on every other incoming frame.
-        # Reuse the most recent landmarks on the in-between frame.
+        # Run the expensive MediaPipe detector once every four incoming frames.
+        # Reuse the most recent landmarks on the in-between frames.
         self.frame_index += 1
-        if self.frame_index % 2 == 1:
+        if self.frame_index % 4 == 1:
             rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             results = self.hands.process(rgb)
             self.last_hand_landmarks = (
@@ -137,7 +137,7 @@ class SignProcessor(VideoProcessorBase):
         hand_landmarks = self.last_hand_landmarks
         if hand_landmarks is not None:
             now = time.monotonic()
-            if now - self.last_prediction_time >= 0.25:
+            if now - self.last_prediction_time >= 0.5:
                 prediction = model(
                     extract_features(hand_landmarks), training=False
                 ).numpy().squeeze()
