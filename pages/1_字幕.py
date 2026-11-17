@@ -27,10 +27,10 @@ model = load_my_model()
 
 @st.cache_data(ttl=300)
 def get_ice_servers(turn_key_id, turn_api_token):
-    """Fetch short-lived Cloudflare TURN credentials and keep fast fallbacks."""
+    """Return separate browser and server ICE lists with short-lived credentials."""
     stun_fallback = [{"urls": ["stun:stun.l.google.com:19302"]}]
     if not turn_key_id or not turn_api_token:
-        return stun_fallback, False
+        return stun_fallback, stun_fallback, False
 
     response = requests.post(
         "https://rtc.live.cloudflare.com/v1/turn/keys/"
@@ -58,7 +58,7 @@ def get_ice_servers(turn_key_id, turn_api_token):
         None,
     )
     if not turn_server:
-        return ice_servers, True
+        return ice_servers, ice_servers, True
 
     urls = turn_server.get("urls", [])
     if isinstance(urls, str):
@@ -73,28 +73,42 @@ def get_ice_servers(turn_key_id, turn_api_token):
     )
     relay_urls = [url for url in (udp_url, tls_url) if url]
     if not relay_urls:
-        return ice_servers, True
+        return ice_servers, ice_servers, True
 
-    # Keep each transport as a separate ICE server entry, with UDP/443 first.
-    # This was the better-performing configuration before the attempt to split
-    # browser/server ICE settings and before grouping URLs into one entry.
-    shared_turn_servers = [
+    turn_credentials = {
+        "username": turn_server["username"],
+        "credential": turn_server["credential"],
+    }
+
+    # The phone/browser tries UDP/443 first and can fall back to TLS/TCP/443.
+    browser_turn_servers = [
         {
             "urls": [url],
-            "username": turn_server["username"],
-            "credential": turn_server["credential"],
+            **turn_credentials,
         }
         for url in relay_urls
     ]
+
+    # Keep the Streamlit Cloud peer on the previously working TLS/TCP route.
+    # streamlit-webrtc gathers server-side ICE candidates while handling the
+    # offer; avoiding an additional UDP candidate there helps prevent its
+    # 10-second signalling timeout. The browser still has UDP and TCP options.
+    server_turn_url = tls_url or udp_url
+    server_turn_servers = [{"urls": [server_turn_url], **turn_credentials}]
+    stun_server = {"urls": ["stun:stun.cloudflare.com:3478"]}
+    browser_ice_servers = [stun_server, *browser_turn_servers]
+    server_ice_servers = [stun_server, *server_turn_servers]
+
     logging.getLogger(__name__).warning(
-        "Cloudflare TURN routes offered: %s",
+        "Cloudflare TURN routes offered; browser=%s, server=%s",
         ", ".join(
             label
             for label, url in (("udp/443", udp_url), ("tls-tcp/443", tls_url))
             if url
         ),
+        "tls-tcp/443" if tls_url else "udp/443",
     )
-    return shared_turn_servers, True
+    return browser_ice_servers, server_ice_servers, True
 
 
 with open("labelencoder_all_new.pkl", "rb") as f:
@@ -224,9 +238,13 @@ except Exception:
     turn_api_token = ""
 
 try:
-    ice_servers, turn_enabled = get_ice_servers(turn_key_id, turn_api_token)
+    frontend_ice_servers, server_ice_servers, turn_enabled = get_ice_servers(
+        turn_key_id, turn_api_token
+    )
 except requests.RequestException:
-    ice_servers = [{"urls": ["stun:stun.l.google.com:19302"]}]
+    fallback_ice_servers = [{"urls": ["stun:stun.l.google.com:19302"]}]
+    frontend_ice_servers = fallback_ice_servers
+    server_ice_servers = fallback_ice_servers
     turn_enabled = False
     st.warning("TURNサーバーに接続できません。STUNでカメラ接続を試します。")
 
@@ -263,7 +281,8 @@ webrtc_ctx = webrtc_streamer(
         },
         "audio": False,
     },
-    rtc_configuration={"iceServers": ice_servers},
+    frontend_rtc_configuration={"iceServers": frontend_ice_servers},
+    server_rtc_configuration={"iceServers": server_ice_servers},
 )
 
 
