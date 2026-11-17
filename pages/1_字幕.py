@@ -9,7 +9,6 @@ import mediapipe as mp
 import numpy as np
 import requests
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
 from streamlit_webrtc import VideoProcessorBase, webrtc_streamer
 from tensorflow.keras.models import load_model
 
@@ -130,9 +129,6 @@ class SignProcessor(VideoProcessorBase):
         )
         self.mp_draw = mp.solutions.drawing_utils
         self.mp_hands = mp.solutions.hands
-        self.font = ImageFont.truetype(
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 26
-        )
         self.last_prediction_time = 0.0
         self.last_hira = ""
         self.last_confidence = 0.0
@@ -179,27 +175,18 @@ class SignProcessor(VideoProcessorBase):
             )
             hira = self.last_hira
             confidence = self.last_confidence
-            overlay = (
-                f"認識中：{hira} ({confidence:.1%})" if hira else "認識中：…"
-            )
         else:
             self.last_hira = ""
             self.last_confidence = 0.0
             hira = ""
             confidence = 0.0
-            overlay = "認識中：－"
 
         with self.result_lock:
             self.shared_result["hira"] = hira
             self.shared_result["confidence"] = confidence
             self.shared_result["frames"] += 1
 
-        pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-        ImageDraw.Draw(pil_image).text(
-            (20, 20), overlay, font=self.font, fill=(255, 255, 255)
-        )
-        output = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
-        return av.VideoFrame.from_ndarray(output, format="bgr24")
+        return av.VideoFrame.from_ndarray(image, format="bgr24")
 
 
 st.title("字幕機能")
@@ -277,7 +264,10 @@ def show_current_recognition():
     st.session_state.current_hira = result["hira"]
     st.caption(f"サーバー処理フレーム数：{result['frames']}")
     if result["hira"]:
-        st.caption(f"現在の認識文字：{result['hira']}（{result['confidence']:.1%}）")
+        st.markdown(
+            f"### 認識文字：{result['hira']}  \n"
+            f"認識度：{result['confidence']:.1%}"
+        )
     elif webrtc_ctx.state.playing:
         st.caption("手をカメラに映してください")
     else:
