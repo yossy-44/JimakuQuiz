@@ -68,7 +68,7 @@ def get_ice_servers(turn_key_id, turn_api_token):
             # Return separate entries in this order so browsers can try UDP
             # without losing the TLS/TCP fallback. Reuse Cloudflare's short-
             # lived username and credential for both transports.
-            turn_servers = [{"urls": ["stun:stun.cloudflare.com:3478"]}]
+            turn_servers = []
             for relay_url in (udp_url, tls_url):
                 if relay_url:
                     turn_servers.append(
@@ -134,6 +134,12 @@ class SignProcessor(VideoProcessorBase):
         self.last_confidence = 0.0
         self.frame_index = 0
         self.last_hand_landmarks = None
+
+    def on_ended(self):
+        logging.getLogger(__name__).warning(
+            "WebRTC video processor ended; frames received by this processor=%s",
+            self.frame_index,
+        )
 
     def recv(self, frame):
         image = frame.to_ndarray(format="bgr24")
