@@ -42,13 +42,21 @@ def get_ice_servers(turn_key_id, turn_api_token):
     response.raise_for_status()
     ice_servers = response.json()["iceServers"]
 
-    # Use TURN over TLS/TCP on port 443. This is the previously working path
-    # for the mobile connection; keep the transport fixed while diagnosing
-    # the camera stopping after a few frames.
+    # Offer the low-latency UDP relay first and keep TLS/TCP on 443 as a
+    # fallback for networks that block UDP. Avoid other endpoints so ICE does
+    # not spend time probing ports that are commonly blocked.
     for server in ice_servers:
         urls = server.get("urls", [])
         if isinstance(urls, str):
             urls = [urls]
+        udp_url = next(
+            (
+                url
+                for url in urls
+                if url.startswith("turn:") and ":443?transport=udp" in url
+            ),
+            None,
+        )
         tls_url = next(
             (
                 url
@@ -57,10 +65,29 @@ def get_ice_servers(turn_key_id, turn_api_token):
             ),
             None,
         )
-        if tls_url:
-            turn_server = dict(server)
-            turn_server["urls"] = [tls_url]
-            return [turn_server], True
+        if udp_url or tls_url:
+            # Return separate entries in this order so browsers can try UDP
+            # without losing the TLS/TCP fallback. Reuse Cloudflare's short-
+            # lived username and credential for both transports.
+            turn_servers = [{"urls": ["stun:stun.cloudflare.com:3478"]}]
+            for relay_url in (udp_url, tls_url):
+                if relay_url:
+                    turn_servers.append(
+                        {
+                            "urls": [relay_url],
+                            "username": server["username"],
+                            "credential": server["credential"],
+                        }
+                    )
+            logging.getLogger(__name__).info(
+                "Cloudflare TURN configured; relay transports offered: %s",
+                ", ".join(
+                    label
+                    for label, relay_url in (("udp/443", udp_url), ("tls-tcp/443", tls_url))
+                    if relay_url
+                ),
+            )
+            return turn_servers, True
 
     # Keep the provider's returned configuration if it does not offer the
     # TLS/TCP endpoint expected above.
