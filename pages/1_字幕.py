@@ -27,9 +27,10 @@ model = load_my_model()
 
 @st.cache_data(ttl=300)
 def get_ice_servers(turn_key_id, turn_api_token):
-    """Fetch expiring Cloudflare TURN credentials if configured."""
+    """Return separate ICE server lists for the browser and hosted server."""
+    stun_fallback = [{"urls": ["stun:stun.l.google.com:19302"]}]
     if not turn_key_id or not turn_api_token:
-        return [{"urls": ["stun:stun.l.google.com:19302"]}], False
+        return stun_fallback, stun_fallback, False
 
     response = requests.post(
         "https://rtc.live.cloudflare.com/v1/turn/keys/"
@@ -41,56 +42,61 @@ def get_ice_servers(turn_key_id, turn_api_token):
     response.raise_for_status()
     ice_servers = response.json()["iceServers"]
 
-    # Offer the low-latency UDP relay first and keep TLS/TCP on 443 as a
-    # fallback for networks that block UDP. Avoid other endpoints so ICE does
-    # not spend time probing ports that are commonly blocked.
-    for server in ice_servers:
-        urls = server.get("urls", [])
-        if isinstance(urls, str):
-            urls = [urls]
-        udp_url = next(
-            (
-                url
-                for url in urls
-                if url.startswith("turn:") and ":443?transport=udp" in url
-            ),
-            None,
-        )
-        tls_url = next(
-            (
-                url
-                for url in urls
-                if url.startswith("turns:") and ":443?transport=tcp" in url
-            ),
-            None,
-        )
-        if udp_url or tls_url:
-            # Return separate entries in this order so browsers can try UDP
-            # without losing the TLS/TCP fallback. Reuse Cloudflare's short-
-            # lived username and credential for both transports.
-            turn_servers = []
-            for relay_url in (udp_url, tls_url):
-                if relay_url:
-                    turn_servers.append(
-                        {
-                            "urls": [relay_url],
-                            "username": server["username"],
-                            "credential": server["credential"],
-                        }
-                    )
-            logging.getLogger(__name__).info(
-                "Cloudflare TURN configured; relay transports offered: %s",
-                ", ".join(
-                    label
-                    for label, relay_url in (("udp/443", udp_url), ("tls-tcp/443", tls_url))
-                    if relay_url
-                ),
+    turn_server = next(
+        (
+            server
+            for server in ice_servers
+            if any(
+                url.startswith(("turn:", "turns:"))
+                for url in (
+                    server.get("urls", [])
+                    if isinstance(server.get("urls", []), list)
+                    else [server.get("urls", "")]
+                )
             )
-            return turn_servers, True
+        ),
+        None,
+    )
+    if not turn_server:
+        return ice_servers, ice_servers, True
 
-    # Keep the provider's returned configuration if it does not offer the
-    # TLS/TCP endpoint expected above.
-    return ice_servers, True
+    urls = turn_server.get("urls", [])
+    if isinstance(urls, str):
+        urls = [urls]
+    udp_url = next(
+        (url for url in urls if url.startswith("turn:") and ":443?transport=udp" in url),
+        None,
+    )
+    tls_url = next(
+        (url for url in urls if url.startswith("turns:") and ":443?transport=tcp" in url),
+        None,
+    )
+    credentials = {
+        "username": turn_server["username"],
+        "credential": turn_server["credential"],
+    }
+
+    # Let the phone try UDP/443 first, with TLS/TCP/443 as its fallback.
+    frontend_ice_servers = [
+        {"urls": [url], **credentials}
+        for url in (udp_url, tls_url)
+        if url
+    ]
+    # Streamlit Cloud previously stayed connected with TLS/TCP. Keep UDP out
+    # of the hosted server's ICE list and use the stable relay path there.
+    server_relay_url = tls_url or udp_url
+    server_ice_servers = (
+        [{"urls": [server_relay_url], **credentials}]
+        if server_relay_url
+        else ice_servers
+    )
+    logging.getLogger(__name__).warning(
+        "TURN routes configured: browser UDP=%s, browser TLS/TCP=%s, server relay=%s",
+        bool(udp_url),
+        bool(tls_url),
+        server_relay_url or "provider-default",
+    )
+    return frontend_ice_servers, server_ice_servers, True
 
 
 with open("labelencoder_all_new.pkl", "rb") as f:
@@ -220,9 +226,12 @@ except Exception:
     turn_api_token = ""
 
 try:
-    ice_servers, turn_enabled = get_ice_servers(turn_key_id, turn_api_token)
+    frontend_ice_servers, server_ice_servers, turn_enabled = get_ice_servers(
+        turn_key_id, turn_api_token
+    )
 except requests.RequestException:
-    ice_servers = [{"urls": ["stun:stun.l.google.com:19302"]}]
+    frontend_ice_servers = [{"urls": ["stun:stun.l.google.com:19302"]}]
+    server_ice_servers = frontend_ice_servers
     turn_enabled = False
     st.warning("TURNサーバーに接続できません。STUNでカメラ接続を試します。")
 
@@ -259,7 +268,8 @@ webrtc_ctx = webrtc_streamer(
         },
         "audio": False,
     },
-    rtc_configuration={"iceServers": ice_servers},
+    frontend_rtc_configuration={"iceServers": frontend_ice_servers},
+    server_rtc_configuration={"iceServers": server_ice_servers},
 )
 
 
