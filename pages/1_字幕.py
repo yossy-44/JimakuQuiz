@@ -97,7 +97,10 @@ def get_ice_servers(turn_key_id, turn_api_token):
     server_turn_servers = [{"urls": [server_turn_url], **turn_credentials}]
     stun_server = {"urls": ["stun:stun.cloudflare.com:3478"]}
     browser_ice_servers = [stun_server, *browser_turn_servers]
-    server_ice_servers = [stun_server, *server_turn_servers]
+    # Do not make the server gather an additional STUN candidate: on
+    # Streamlit Community Cloud this can consume the 10-second offer timeout.
+    # The server uses the single known-working TLS/TCP relay candidate.
+    server_ice_servers = server_turn_servers
 
     logging.getLogger(__name__).warning(
         "Cloudflare TURN routes offered; browser=%s, server=%s",
@@ -254,22 +257,6 @@ if not turn_enabled:
 st.subheader("字幕")
 st.text(st.session_state.subtitle_text or "（字幕はまだありません）")
 
-button_row1_col1, button_row1_col2 = st.columns(2)
-with button_row1_col1:
-    if st.button("文字確定", use_container_width=True) and st.session_state.current_hira:
-        st.session_state.subtitle_text += st.session_state.current_hira
-with button_row1_col2:
-    if st.button("1文字削除", use_container_width=True):
-        st.session_state.subtitle_text = st.session_state.subtitle_text[:-1]
-
-button_row2_col1, button_row2_col2 = st.columns(2)
-with button_row2_col1:
-    if st.button("字幕クリア", use_container_width=True):
-        st.session_state.subtitle_text = ""
-with button_row2_col2:
-    if st.button("改行", use_container_width=True):
-        st.session_state.subtitle_text += "\n"
-
 webrtc_ctx = webrtc_streamer(
     key="sign-recognition-camera",
     video_processor_factory=lambda: SignProcessor(shared_result, result_lock),
@@ -304,3 +291,19 @@ def show_current_recognition():
 
 
 show_current_recognition()
+
+button_row1_col1, button_row1_col2 = st.columns(2)
+with button_row1_col1:
+    if st.button("文字確定", use_container_width=True) and st.session_state.current_hira:
+        st.session_state.subtitle_text += st.session_state.current_hira
+with button_row1_col2:
+    if st.button("1文字削除", use_container_width=True):
+        st.session_state.subtitle_text = st.session_state.subtitle_text[:-1]
+
+button_row2_col1, button_row2_col2 = st.columns(2)
+with button_row2_col1:
+    if st.button("字幕クリア", use_container_width=True):
+        st.session_state.subtitle_text = ""
+with button_row2_col2:
+    if st.button("改行", use_container_width=True):
+        st.session_state.subtitle_text += "\n"
