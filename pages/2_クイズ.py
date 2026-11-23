@@ -1,5 +1,6 @@
 import streamlit as st
 import random
+import base64
 from pathlib import Path
 
 st.title("ひらがなクイズ")
@@ -33,7 +34,13 @@ if st.session_state.get("quiz_image") not in image_files:
 
 image_file = st.session_state.quiz_image
 
-st.image(str(image_file), width=300)
+image_bytes = base64.b64encode(image_file.read_bytes()).decode("ascii")
+image_type = "image/jpeg" if image_file.suffix.lower() in {".jpg", ".jpeg"} else "image/png"
+st.markdown(
+    f'<img src="data:{image_type};base64,{image_bytes}" ' +
+    'style="width:300px;max-width:100%;height:auto;" alt="クイズ画像">',
+    unsafe_allow_html=True,
+)
 
 # ファイル名からローマ字取得
 # 例: 6ka_A.PNG → ka
@@ -93,3 +100,4 @@ if st.button("次の問題"):
         del st.session_state["choices"]
 
     st.rerun()
+
