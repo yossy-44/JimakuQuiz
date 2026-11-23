@@ -1,7 +1,6 @@
 import streamlit as st
 import random
-import os
-from PIL import Image
+from pathlib import Path
 
 st.title("ひらがなクイズ")
 
@@ -18,27 +17,28 @@ romaji_to_hira = {
     "wa":"わ","wo":"を","n":"ん"
 }
 
-image_folder = "yubimoji_illust"
+image_folder = Path(__file__).resolve().parent.parent / "yubimoji_illust"
 
-image_files = [
-    f for f in os.listdir(image_folder)
-    if f.endswith((".PNG", ".jpg", ".jpeg"))
-]
+image_files = sorted(
+    path for path in image_folder.iterdir()
+    if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg"}
+) if image_folder.is_dir() else []
 
-if "quiz_image" not in st.session_state:
+if not image_files:
+    st.error(f"クイズ画像が見つかりません。画像フォルダーを確認してください: {image_folder.name}")
+    st.stop()
+
+if st.session_state.get("quiz_image") not in image_files:
     st.session_state.quiz_image = random.choice(image_files)
 
 image_file = st.session_state.quiz_image
 
-st.image(
-    os.path.join(image_folder, image_file),
-    width=300
-)
+st.image(str(image_file), width=300)
 
 # ファイル名からローマ字取得
 # 例: 6ka_A.PNG → ka
 
-filename = os.path.splitext(image_file)[0]
+filename = image_file.stem
 
 romaji = ""
 
