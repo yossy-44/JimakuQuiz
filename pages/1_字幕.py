@@ -292,18 +292,53 @@ def show_current_recognition():
 
 show_current_recognition()
 
+def confirm_current_character():
+    current_hira = st.session_state.get("current_hira", "")
+    if current_hira:
+        st.session_state.subtitle_text += current_hira
+
+
+def delete_last_character():
+    st.session_state.subtitle_text = st.session_state.subtitle_text[:-1]
+
+
+def clear_subtitle():
+    st.session_state.subtitle_text = ""
+
+
+def add_subtitle_newline():
+    st.session_state.subtitle_text += "\n"
+
+
+st.subheader("字幕操作")
 button_row1_col1, button_row1_col2 = st.columns(2)
 with button_row1_col1:
-    if st.button("文字確定", use_container_width=True) and st.session_state.current_hira:
-        st.session_state.subtitle_text += st.session_state.current_hira
+    st.button(
+        "文字確定",
+        key="subtitle_confirm_button",
+        use_container_width=True,
+        on_click=confirm_current_character,
+    )
 with button_row1_col2:
-    if st.button("1文字削除", use_container_width=True):
-        st.session_state.subtitle_text = st.session_state.subtitle_text[:-1]
+    st.button(
+        "1文字削除",
+        key="subtitle_delete_button",
+        use_container_width=True,
+        on_click=delete_last_character,
+    )
 
 button_row2_col1, button_row2_col2 = st.columns(2)
 with button_row2_col1:
-    if st.button("字幕クリア", use_container_width=True):
-        st.session_state.subtitle_text = ""
+    st.button(
+        "字幕クリア",
+        key="subtitle_clear_button",
+        use_container_width=True,
+        on_click=clear_subtitle,
+    )
 with button_row2_col2:
-    if st.button("改行", use_container_width=True):
-        st.session_state.subtitle_text += "\n"
+    st.button(
+        "改行",
+        key="subtitle_newline_button",
+        use_container_width=True,
+        on_click=add_subtitle_newline,
+    )
